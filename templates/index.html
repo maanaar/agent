@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Realtime Voice Chat</title>
+</head>
+<body>
+  <h2>🎤 Talk to Gemini (with TTS reply)</h2>
+  <button id="startBtn">Start Session</button>
+  <audio id="assistantAudio" autoplay></audio>
+
+  <script>
+    const wsUrl = "ws://localhost:8000/ws";  // FastAPI WebSocket
+    let pc, ws;
+
+    document.getElementById("startBtn").onclick = async () => {
+      // Create RTCPeerConnection
+      pc = new RTCPeerConnection();
+
+      // 🔊 Play incoming audio from assistant
+      const audioEl = document.getElementById("assistantAudio");
+      pc.ontrack = (event) => {
+        console.log("Got remote track:", event.streams);
+        audioEl.srcObject = event.streams[0];
+      };
+
+      // 🎙 Capture microphone
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      // WebSocket signaling
+      ws = new WebSocket(wsUrl);
+      ws.onopen = async () => {
+        console.log("Connected to signaling server");
+
+        // Create offer
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Send offer SDP via WebSocket
+        ws.send(JSON.stringify({
+          type: "offer",
+          sdp: offer.sdp
+        }));
+      };
+
+      // Listen for answer from server
+      ws.onmessage = async (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "answer") {
+          await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
+          console.log("Remote description set (answer)");
+        }
+      };
+    };
+  </script>
+</body>
+</html>
